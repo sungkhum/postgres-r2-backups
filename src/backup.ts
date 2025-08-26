@@ -5,7 +5,7 @@ import { filesize } from "filesize"
 import path from "path"
 import os from "os"
 
-import { env } from "./env.ts"
+import { env } from "./env.js"
 
 const uploadToR2 = async ({ name, path }: { name: string; path: string }) => {
   console.log("Uploading backup to Cloudflare R2...")
