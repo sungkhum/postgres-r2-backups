@@ -1,8 +1,8 @@
 # PostgreSQL Backup to Cloudflare R2
 
-A Node.js application that automatically backs up PostgreSQL databases to Cloudflare R2 storage on a configurable schedule.
+A Node.js application that automatically backs up PostgreSQL databases with a Strapi backend to Cloudflare R2 storage on a configurable schedule.
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/gUV2HJ?referralCode=6EnXto&utm_medium=integration&utm_source=template&utm_campaign=generic)
+[![Deploy on Railway with a Strapi Backend](https://railway.com/button.svg)](https://railway.com/deploy/strapi-with-cloudflare-r2?referralCode=6EnXto&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
 ## Features
 
@@ -19,14 +19,14 @@ A Node.js application that automatically backs up PostgreSQL databases to Cloudf
 Configure the following environment variables:
 
 ### Cloudflare R2 Configuration
-- `R2_ACCESS_KEY_ID` - Your Cloudflare R2 API Token
-- `R2_SECRET_ACCESS_KEY` - Your Cloudflare R2 API Secret  
-- `R2_BUCKET` - The R2 bucket name
-- `R2_ACCOUNT_ID` - Your Cloudflare account ID
-- `R2_REGION` - The R2 region (default: "auto")
+- `CF_ACCESS_KEY_ID` - Your Cloudflare R2 API Token
+- `CF_SECRET_ACCESS_KEY` - Your Cloudflare R2 API Secret  
+- `CF_BUCKET` - The R2 bucket name
+- `CF_ENDPOINT` - Your Cloudflare bucket endpoint (without bucket name)
+- `CF_PUBLIC_ACCESS_URL` - Cloudflare R2 public access URL for CDN (recommended for files >5MB)
 
 ### Database Configuration
-- `BACKUP_DATABASE_URL` - PostgreSQL connection string
+- `BACKUP_DATABASE_URL` - Internal Railway PostgreSQL connection string
 
 ### Backup Configuration
 - `BACKUP_CRON_SCHEDULE` - Cron schedule (default: "0 5 * * *" - daily at 5 AM)
