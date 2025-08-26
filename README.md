@@ -2,6 +2,8 @@
 
 A Node.js application that automatically backs up PostgreSQL databases to Cloudflare R2 storage on a configurable schedule.
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/gUV2HJ?referralCode=6EnXto&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
 ## Features
 
 - 🔄 Automated backups using cron scheduling
