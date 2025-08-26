@@ -1,0 +1,1 @@
+declare module "strapi-provider-cloudflare-r2";

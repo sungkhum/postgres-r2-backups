@@ -1,6 +1,6 @@
 import { CronJob } from "cron"
-import { backup } from "./backup.ts"
-import { env } from "./env.ts"
+import { backup } from "./backup.js"
+import { env } from "./env.js"
 
 console.log("NodeJS Version: " + process.version)
 
