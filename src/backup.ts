@@ -73,52 +73,45 @@ const uploadToS3 = async ({ name, path: filePath }: { name: string; path: string
 const dumpToFile = async (filePath: string) => {
   console.log("Dumping DB to file...")
 
+  // Ensure sslmode=require for Railway; append if missing
+  const url = env.BACKUP_DATABASE_URL.includes("sslmode=")
+    ? env.BACKUP_DATABASE_URL
+    : `${env.BACKUP_DATABASE_URL}${env.BACKUP_DATABASE_URL.includes("?") ? "&" : "?"}sslmode=require`
+
+  // Use pipefail so pg_dump errors fail the whole pipeline
+  const cmd = `bash -lc 'set -o pipefail; pg_dump --dbname="${url}" --format=tar ${env.BACKUP_OPTIONS ?? ""} | gzip > "${filePath}"'`
+
   await new Promise<void>((resolve, reject) => {
-    exec(
-      `pg_dump --dbname=${env.BACKUP_DATABASE_URL} --format=tar ${env.BACKUP_OPTIONS ?? ""} | gzip > ${filePath}`,
-      (error, _stdout, stderr) => {
-        if (error) {
-          reject({ error, stderr: stderr.trimEnd() })
-          return
-        }
-
-        const isValidArchive = execSync(`gzip -cd ${filePath} | head -c1`).length === 1
-        if (!isValidArchive) {
-          reject({ error: "Backup archive file is invalid or empty; check for errors above" })
-          return
-        }
-
-        if (stderr) {
-          console.log({ stderr: stderr.trimEnd() })
-        }
-
-        console.log("Backup archive file is valid")
-        console.log("Backup filesize:", filesize(statSync(filePath).size))
-
-        if (stderr) {
-          console.log(
-            `Potential warnings detected; Please ensure the backup file "${path.basename(filePath)}" contains all needed data`,
-          )
-        }
-
-        resolve()
-      },
-    )
-  })
-
-  console.log("DB dumped to file.")
-}
-
-const deleteFile = async (filePath: string) => {
-  console.log("Deleting file...")
-  await new Promise<void>((resolve, reject) => {
-    unlink(filePath, (err) => {
-      if (err) {
-        reject({ error: err })
+    exec(cmd, (error, _stdout, stderr) => {
+      if (error) {
+        reject({ error: error.message || error, stderr: stderr?.trim() })
         return
       }
+      try {
+        const hasByte = execSync(`bash -lc 'gzip -cd "${filePath}" | head -c1 | wc -c'`).toString().trim()
+        if (hasByte !== "1") {
+          reject({ error: "Backup archive file is invalid or empty; pg_dump produced no data", stderr: stderr?.trim() })
+          return
+        }
+      } catch (e: any) {
+        reject({ error: "Failed to read/validate gzip output", stderr: String(e?.stderr || e?.message || e) })
+        return
+      }
+
+      if (stderr) console.log({ stderr: stderr.trim() })
+      console.log("Backup archive file is valid")
+      console.log("Backup filesize:", filesize(statSync(filePath).size))
       resolve()
     })
+  })
+
+  console.log("DB dumped to file...")
+}
+
+const deleteFile = async (p: string) => {
+  console.log("Deleting file...")
+  await new Promise<void>((resolve, reject) => {
+    unlink(p, (err) => (err ? reject({ error: err }) : resolve()))
   })
 }
 
