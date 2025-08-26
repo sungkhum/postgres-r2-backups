@@ -1,10 +1,13 @@
 import { exec, execSync } from "child_process"
 import { S3Client, S3ClientConfig, PutObjectCommandInput } from "@aws-sdk/client-s3"
 import { Upload } from "@aws-sdk/lib-storage"
-import { createReadStream, unlink, statSync } from "fs"
+import { createReadStream, createWriteStream, unlink, statSync } from "fs"
 import { filesize } from "filesize"
 import path from "path"
 import os from "os"
+import { spawn } from "child_process"
+import { createGzip } from "zlib"
+
 
 import { env } from "./env.js"
 import { createMD5 } from "./util.js"
@@ -73,38 +76,65 @@ const uploadToS3 = async ({ name, path: filePath }: { name: string; path: string
 const dumpToFile = async (filePath: string) => {
   console.log("Dumping DB to file...")
 
-  // Ensure sslmode=require for Railway; append if missing
+  // Ensure sslmode=require for Railway
   const url = env.BACKUP_DATABASE_URL.includes("sslmode=")
     ? env.BACKUP_DATABASE_URL
     : `${env.BACKUP_DATABASE_URL}${env.BACKUP_DATABASE_URL.includes("?") ? "&" : "?"}sslmode=require`
 
-  // Use pipefail so pg_dump errors fail the whole pipeline
-  const cmd = `bash -lc 'set -o pipefail; pg_dump --dbname="${url}" --format=tar ${env.BACKUP_OPTIONS ?? ""} | gzip > "${filePath}"'`
+  // Build args for pg_dump
+  const args = ["--dbname", url, "--format=tar"]
+  if (env.BACKUP_OPTIONS) {
+    // simple split (avoid quotes in BACKUP_OPTIONS)
+    args.push(...env.BACKUP_OPTIONS.split(/\s+/).filter(Boolean))
+  }
 
-  await new Promise<void>((resolve, reject) => {
-    exec(cmd, (error, _stdout, stderr) => {
-      if (error) {
-        reject({ error: error.message || error, stderr: stderr?.trim() })
+  // Spawn pg_dump → gzip → file
+  const dump = spawn("pg_dump", args, { stdio: ["ignore", "pipe", "pipe"] })
+  const gzip = createGzip()
+  const out = createWriteStream(filePath)
+
+  let pgExitCode: number | null = null
+
+  dump.stderr.on("data", (d) => {
+    // surface pg_dump warnings/errors
+    process.stdout.write(`[pg_dump] ${d}`)
+  })
+
+  const done = new Promise<void>((resolve, reject) => {
+    dump.on("error", (err) => reject({ error: `pg_dump spawn error: ${err.message || err}` }))
+    gzip.on("error", (err) => reject({ error: `gzip error: ${err.message || err}` }))
+    out.on("error", (err) => reject({ error: `write error: ${err.message || err}` }))
+
+    dump.on("close", (code) => {
+      pgExitCode = code
+      // we’ll still wait for the file stream to finish
+    })
+
+    out.on("close", () => {
+      // Validate pg_dump exit + that something was written
+      if (pgExitCode !== 0) {
+        reject({ error: `pg_dump exited with code ${pgExitCode}` })
         return
       }
       try {
-        const hasByte = execSync(`bash -lc 'gzip -cd "${filePath}" | head -c1 | wc -c'`).toString().trim()
-        if (hasByte !== "1") {
-          reject({ error: "Backup archive file is invalid or empty; pg_dump produced no data", stderr: stderr?.trim() })
+        const size = statSync(filePath).size
+        if (size <= 0) {
+          reject({ error: "Backup archive file is invalid or empty; pg_dump produced no data" })
           return
         }
+        console.log("Backup archive file is valid")
+        console.log("Backup filesize:", filesize(size))
+        resolve()
       } catch (e: any) {
-        reject({ error: "Failed to read/validate gzip output", stderr: String(e?.stderr || e?.message || e) })
-        return
+        reject({ error: `stat failed: ${e?.message || e}` })
       }
-
-      if (stderr) console.log({ stderr: stderr.trim() })
-      console.log("Backup archive file is valid")
-      console.log("Backup filesize:", filesize(statSync(filePath).size))
-      resolve()
     })
   })
 
+  // Wire the pipeline
+  dump.stdout.pipe(gzip).pipe(out)
+
+  await done
   console.log("DB dumped to file...")
 }
 
